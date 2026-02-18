@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from 'react';
 
 interface FamilyMember {
@@ -56,15 +58,19 @@ export default function Home() {
   const updateActivity = (memberId: string, activity: 'puasa' | 'ngaji' | 'olahraga', value: boolean) => {
     setMembers(members => members.map(member => {
       if (member.id === memberId) {
-        const updatedActivities = member.activities.map(a => {
-          if (a.date === selectedDate) {
-            return { ...a, [activity]: value };
-          }
-          return a;
-        });
-        
-        // If no activity for today, add it
-        if (!member.activities.find(a => a.date === selectedDate)) {
+        const todayActivity = member.activities.find(a => a.date === selectedDate);
+        let updatedActivities = [...member.activities];
+
+        if (todayActivity) {
+          // Update existing activity
+          updatedActivities = member.activities.map(a => {
+            if (a.date === selectedDate) {
+              return { ...a, [activity]: value };
+            }
+            return a;
+          });
+        } else {
+          // Add new activity for today
           updatedActivities.push({
             date: selectedDate,
             puasa: activity === 'puasa' ? value : false,
@@ -73,11 +79,14 @@ export default function Home() {
           });
         }
         
+        const newScore = calculateScore(updatedActivities);
+        const newStreak = calculateStreak(updatedActivities, today); 
+
         return {
           ...member,
           activities: updatedActivities,
-          score: calculateScore(updatedActivities),
-          streak: calculateStreak(updatedActivities)
+          score: newScore,
+          streak: newStreak
         };
       }
       return member;
@@ -94,24 +103,28 @@ export default function Home() {
     }, 0);
   };
 
-  const calculateStreak = (activities: any[]) => {
-    const today = new Date().toISOString().split('T')[0];
+  const calculateStreak = (activities: any[], today: string) => {
     let streak = 0;
-    let currentDate = today;
-    
+    let currentDate = new Date(today);
+    currentDate.setDate(currentDate.getDate() - 1); // Start checking from yesterday
+
     while (true) {
-      const activity = activities.find(a => a.date === currentDate);
+      const dateString = currentDate.toISOString().split('T')[0];
+      const activity = activities.find(a => a.date === dateString);
+      
+      // Check if activity for this date exists and has at least one completed task
       if (!activity || (!activity.puasa && !activity.ngaji && !activity.olahraga)) {
-        break;
+        break; // Streak broken
       }
+      
       streak++;
-      const date = new Date(currentDate);
-      date.setDate(date.getDate() - 1);
-      currentDate = date.toISOString().split('T')[0];
+      currentDate.setDate(currentDate.getDate() - 1); // Move to the previous day
     }
     
     return streak;
   };
+
+  const today = new Date().toISOString().split('T')[0];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -150,22 +163,29 @@ export default function Home() {
               <tbody>
                 {members
                   .sort((a, b) => b.score - a.score)
-                  .map((member) => (
-                    <tr key={member.id} className="border-b">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center">
-                          <img
-                            src={member.avatar}
-                            alt={member.name}
-                            className="w-10 h-10 rounded-full mr-3"
-                          />
-                          <span className="font-medium">{member.name}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 font-bold text-green-600">{member.score}</td>
-                      <td className="px-6 py-4 text-blue-600">{member.streak} hari</td>
-                    </tr>
-                  ))}
+                  .map((member) => {
+                    // Ensure activity data is present for the selected date for accurate display
+                    const memberActivity = member.activities.find(a => a.date === selectedDate);
+                    const displayScore = memberActivity ? member.score : 0; // Display 0 if no activity recorded for the day
+                    const displayStreak = memberActivity ? member.streak : 0; // Display 0 streak if no activity recorded for the day
+
+                    return (
+                      <tr key={member.id} className="border-b">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center">
+                            <img
+                              src={member.avatar}
+                              alt={member.name}
+                              className="w-10 h-10 rounded-full mr-3"
+                            />
+                            <span className="font-medium">{member.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 font-bold text-green-600">{displayScore}</td>
+                        <td className="px-6 py-4 text-blue-600">{displayStreak} hari</td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           </div>
@@ -173,50 +193,58 @@ export default function Home() {
 
         {/* Family Members */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {members.map((member) => (
-            <div key={member.id} className="bg-white rounded-lg shadow-lg p-6">
-              <div className="text-center mb-4">
-                <img
-                  src={member.avatar}
-                  alt={member.name}
-                  className="w-20 h-20 rounded-full mx-auto mb-3"
-                />
-                <h3 className="text-lg font-semibold text-blue-600">{member.name}</h3>
-                <p className="text-sm text-gray-600">Score: {member.score}</p>
-                <p className="text-sm text-gray-600">Streak: {member.streak}</p>
-              </div>
+          {members.map((member) => {
+            // Ensure activity data is present for the selected date for accurate checkbox state
+            const memberActivity = member.activities.find(a => a.date === selectedDate);
+            const isPuasaChecked = memberActivity ? memberActivity.puasa : false;
+            const isNgajiChecked = memberActivity ? memberActivity.ngaji : false;
+            const isOlahragaChecked = memberActivity ? memberActivity.olahraga : false;
 
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Puasa</span>
-                  <input
-                    type="checkbox"
-                    checked={member.activities.find(a => a.date === selectedDate)?.puasa || false}
-                    onChange={(e) => updateActivity(member.id, 'puasa', e.target.checked)}
-                    className="form-checkbox h-4 w-4 text-blue-600 rounded"
+            return (
+              <div key={member.id} className="bg-white rounded-lg shadow-lg p-6">
+                <div className="text-center mb-4">
+                  <img
+                    src={member.avatar}
+                    alt={member.name}
+                    className="w-20 h-20 rounded-full mx-auto mb-3"
                   />
+                  <h3 className="text-lg font-semibold text-blue-600">{member.name}</h3>
+                  <p className="text-sm text-gray-600">Score: {member.score}</p>
+                  <p className="text-sm text-gray-600">Streak: {member.streak}</p>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Ngaji</span>
-                  <input
-                    type="checkbox"
-                    checked={member.activities.find(a => a.date === selectedDate)?.ngaji || false}
-                    onChange={(e) => updateActivity(member.id, 'ngaji', e.target.checked)}
-                    className="form-checkbox h-4 w-4 text-blue-600 rounded"
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Olahraga</span>
-                  <input
-                    type="checkbox"
-                    checked={member.activities.find(a => a.date === selectedDate)?.olahraga || false}
-                    onChange={(e) => updateActivity(member.id, 'olahraga', e.target.checked)}
-                    className="form-checkbox h-4 w-4 text-blue-600 rounded"
-                  />
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm">Puasa</span>
+                    <input
+                      type="checkbox"
+                      checked={isPuasaChecked}
+                      onChange={(e) => updateActivity(member.id, 'puasa', e.target.checked)}
+                      className="form-checkbox h-4 w-4 text-blue-600 rounded"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm">Ngaji</span>
+                    <input
+                      type="checkbox"
+                      checked={isNgajiChecked}
+                      onChange={(e) => updateActivity(member.id, 'ngaji', e.target.checked)}
+                      className="form-checkbox h-4 w-4 text-blue-600 rounded"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm">Olahraga</span>
+                    <input
+                      type="checkbox"
+                      checked={isOlahragaChecked}
+                      onChange={(e) => updateActivity(member.id, 'olahraga', e.target.checked)}
+                      className="form-checkbox h-4 w-4 text-blue-600 rounded"
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
